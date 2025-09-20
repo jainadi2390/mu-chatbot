@@ -23,18 +23,23 @@ export const processDocument = async (documentName, content) => {
         // Split document into chunks
         const chunks = splitTextIntoChunks(content);
 
-        // Process each chunk
+        // Process each chunk with error handling
         const processedChunks = [];
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            const embedding = await generateEmbedding(chunk);
-
-            processedChunks.push({
-                chunk,
-                embedding,
-                documentName,
-                chunkIndex: i
-            });
+            try {
+                const embedding = await generateEmbedding(chunk);
+                processedChunks.push({
+                    chunk,
+                    embedding,
+                    documentName,
+                    chunkIndex: i
+                });
+            } catch (error) {
+                console.error(`Failed to generate embedding for chunk ${i} in ${documentName}:`, error.message);
+                // Skip this chunk and continue with the next one
+                continue;
+            }
         }
 
         return processedChunks;

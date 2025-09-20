@@ -27,11 +27,17 @@ export const generateEmbedding = async (text) => {
             throw new Error('OpenAI client not initialized');
         }
 
-        const response = await openai.embeddings.create({
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Embedding generation timeout')), 30000);
+        });
+
+        const embeddingPromise = openai.embeddings.create({
             model: "text-embedding-ada-002",
             input: text,
         });
 
+        const response = await Promise.race([embeddingPromise, timeoutPromise]);
         return response.data[0].embedding;
     } catch (error) {
         console.error('Error generating embedding:', error);
@@ -104,7 +110,7 @@ export const findSimilarDocuments = async (query, documentEmbeddings, topK = 3) 
  * @param {Number} chunkOverlap - Number of characters to overlap between chunks
  * @returns {Array<String>} - Array of text chunks
  */
-export const splitTextIntoChunks = (text, chunkSize = 2000, chunkOverlap = 400) => {
+export const splitTextIntoChunks = (text, chunkSize = 4000, chunkOverlap = 200) => {
     if (chunkSize <= 0 || chunkOverlap >= chunkSize) {
         throw new Error('Invalid chunk size or overlap');
     }

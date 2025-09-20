@@ -47,9 +47,43 @@ const ChatMessages = ({ messages, isTyping, messagesEndRef }) => {
                             }`}
                     >
                         {message.sender === 'bot' ? (
-                            <ReactMarkdown className="prose dark:prose-invert max-w-none">
-                                {message.text}
-                            </ReactMarkdown>
+                            <div>
+                                <ReactMarkdown className="prose dark:prose-invert max-w-none">
+                                    {message.text}
+                                </ReactMarkdown>
+                                
+                                {/* Display sources if available */}
+                                {message.sources && message.sources.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                                            Sources:
+                                        </div>
+                                        <div className="space-y-1">
+                                            {message.sources.map((source, index) => (
+                                                <div key={index} className="text-xs bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                    <span className="font-medium">{source.filename}</span>
+                                                    {source.similarity && (
+                                                        <span className="ml-2 text-gray-500">
+                                                            ({(source.similarity * 100).toFixed(0)}% match)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Display RAG status */}
+                                {message.metadata && (
+                                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                        {message.metadata.ragEnabled ? (
+                                            <span className="text-green-600 dark:text-green-400">✓ RAG Enhanced</span>
+                                        ) : (
+                                            <span className="text-yellow-600 dark:text-yellow-400">⚠ Fallback Mode</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         ) : (
                             <p>{message.text}</p>
                         )}
