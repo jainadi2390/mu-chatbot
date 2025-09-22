@@ -12,20 +12,19 @@ const __dirname = dirname(__filename);
 
 class RAGService {
     constructor() {
-        // Initialize DeepSeek API client if API key is available
-        if (process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY.includes('disabled')) {
+        // Initialize OpenAI API client if API key is available
+        if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('disabled')) {
             try {
                 this.openai = new OpenAI({
-                    apiKey: process.env.DEEPSEEK_API_KEY,
-                    baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+                    apiKey: process.env.OPENAI_API_KEY,
                 });
-                console.log('DeepSeek API client initialized successfully');
+                console.log('OpenAI API client initialized successfully');
             } catch (error) {
-                console.log('Error initializing DeepSeek client:', error.message);
+                console.log('Error initializing OpenAI client:', error.message);
                 this.openai = null;
             }
         } else {
-            console.log('DeepSeek API key not configured, using fallback mode only');
+            console.log('OpenAI API key not configured, using fallback mode only');
             this.openai = null;
         }
 
@@ -255,15 +254,15 @@ class RAGService {
     }
 
     /**
-     * Generate response using DeepSeek API or fallback to static responses
+     * Generate response using OpenAI API or fallback to static responses
      */
     async generateResponse(query, context, conversationHistory, options = {}) {
         try {
             const { temperature = 0.7, maxTokens = 1000 } = options;
 
-            // Check if DeepSeek client is available and API key is valid
-            if (!this.openai || !process.env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY.includes('disabled')) {
-                console.log('DeepSeek not available, using fallback responses');
+            // Check if OpenAI client is available and API key is valid
+            if (!this.openai || !process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes('disabled')) {
+                console.log('OpenAI not available, using fallback responses');
                 return await this.generateFallbackResponse(query, context);
             }
 
@@ -296,7 +295,7 @@ ${context}`
             messages.push({ role: "user", content: query });
 
             const completion = await this.openai.chat.completions.create({
-                model: process.env.AI_MODEL || "deepseek-chat",
+                model: process.env.AI_MODEL || "gpt-3.5-turbo",
                 messages: messages,
                 temperature: temperature,
                 max_tokens: maxTokens
@@ -308,12 +307,12 @@ ${context}`
 
             // Check if it's an authentication error
             if (error.status === 401 || error.code === 'invalid_api_key') {
-                console.log('DeepSeek API authentication failed, using fallback response');
+                console.log('OpenAI API authentication failed, using fallback response');
                 return await this.generateFallbackResponse(query, context);
             }
 
             // For other errors, also use fallback
-            console.log('DeepSeek API call failed, using fallback response');
+            console.log('OpenAI API call failed, using fallback response');
             return await this.generateFallbackResponse(query, context);
         }
     }
