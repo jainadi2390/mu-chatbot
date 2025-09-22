@@ -48,10 +48,10 @@ export const processMessage = async (req, res) => {
 
     } catch (error) {
         console.error('Error processing message:', error);
-        
+
         // Fallback to static knowledge base on error
         try {
-            return await handleFallbackResponse(message, res);
+            return await handleFallbackResponse(req.body.message, res);
         } catch (fallbackError) {
             console.error('Fallback also failed:', fallbackError);
             res.status(500).json({
@@ -66,18 +66,96 @@ export const processMessage = async (req, res) => {
  * Handle fallback response using static knowledge base
  */
 async function handleFallbackResponse(message, res) {
-    const context = formatKnowledgeBase(knowledgeBase);
-    
-    // Simple response generation for fallback
-    const fallbackResponse = `Based on the Masters Union knowledge base:
+    const lowercaseMessage = message.toLowerCase();
+    let response = "";
+    let sources = [];
 
-${context}
+    // Simple keyword-based matching for better responses
+    if (lowercaseMessage.includes('about') || lowercaseMessage.includes('what is') || lowercaseMessage.includes('overview')) {
+        response = `**About Masters Union**
 
-Please note: This is a basic response. For more detailed and accurate information, please contact the Masters Union administration directly.`;
+${knowledgeBase.about.overview}
+
+**Mission**: ${knowledgeBase.about.mission}`;
+        sources = [{ filename: 'About Masters Union', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('program') || lowercaseMessage.includes('course') || lowercaseMessage.includes('mba') || lowercaseMessage.includes('tech')) {
+        response = `**Programs at Masters Union**
+
+**MBA Program**: ${knowledgeBase.programs.mba}
+
+**Technology Programs**: ${knowledgeBase.programs.tech}
+
+**Finance Program**: ${knowledgeBase.programs.finance}`;
+        sources = [{ filename: 'Programs Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('admission') || lowercaseMessage.includes('apply') || lowercaseMessage.includes('requirement')) {
+        response = `**Admissions at Masters Union**
+
+**Process**: ${knowledgeBase.admissions.process}
+
+**Requirements**: ${knowledgeBase.admissions.requirements}
+
+**Application**: ${knowledgeBase.admissions.deadlines}`;
+        sources = [{ filename: 'Admissions Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('faculty') || lowercaseMessage.includes('teacher') || lowercaseMessage.includes('professor')) {
+        response = `**Faculty at Masters Union**
+
+**Approach**: ${knowledgeBase.faculty.approach}
+
+**Industry Experts**: ${knowledgeBase.faculty.experts}`;
+        sources = [{ filename: 'Faculty Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('campus') || lowercaseMessage.includes('location') || lowercaseMessage.includes('facilities')) {
+        response = `**Campus Information**
+
+**Location**: ${knowledgeBase.campus.location}
+
+**Facilities**: ${knowledgeBase.campus.facilities}`;
+        sources = [{ filename: 'Campus Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('placement') || lowercaseMessage.includes('job') || lowercaseMessage.includes('career') || lowercaseMessage.includes('salary')) {
+        response = `**Placement Information**
+
+**Opportunities**: ${knowledgeBase.placements.opportunities}
+
+**Companies**: ${knowledgeBase.placements.companies}
+
+**Salary**: ${knowledgeBase.placements.salary}`;
+        sources = [{ filename: 'Placement Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('fee') || lowercaseMessage.includes('cost') || lowercaseMessage.includes('scholarship') || lowercaseMessage.includes('financial')) {
+        response = `**Fees and Financial Aid**
+
+**Fee Structure**: ${knowledgeBase.fees.structure}
+
+**Scholarships**: ${knowledgeBase.fees.scholarships}`;
+        sources = [{ filename: 'Fees Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('contact') || lowercaseMessage.includes('email') || lowercaseMessage.includes('phone') || lowercaseMessage.includes('reach')) {
+        response = `**Contact Masters Union**
+
+**Email**: ${knowledgeBase.contact.email}
+**Phone**: ${knowledgeBase.contact.phone}
+**Website**: ${knowledgeBase.contact.website}`;
+        sources = [{ filename: 'Contact Information', similarity: 0.9 }];
+    } else if (lowercaseMessage.includes('hello') || lowercaseMessage.includes('hi') || lowercaseMessage.includes('hey')) {
+        response = `Hello! 👋 Welcome to the Masters Union Chatbot!
+
+I can help you with information about:
+• **Programs** (MBA, Technology, Finance)
+• **Admissions** process and requirements
+• **Faculty** and teaching approach
+• **Campus** and facilities
+• **Placements** and career opportunities
+• **Fees** and scholarships
+• **Contact** information
+
+What would you like to know about Masters Union?`;
+        sources = [{ filename: 'Welcome Information', similarity: 1.0 }];
+    } else {
+        // General response for unrecognized queries
+        response = `I'd be happy to help you with information about Masters Union! I can provide details about:\n\n• **Programs**: MBA, Technology, and Finance programs\n• **Admissions**: Application process and requirements\n• **Faculty**: Industry experts and teaching approach\n• **Campus**: Location and facilities in Gurugram\n• **Placements**: Career opportunities and companies\n• **Fees**: Cost structure and scholarships\n• **Contact**: How to reach Masters Union\n\nPlease ask me about any specific topic you'd like to know more about!`;
+        sources = [{ filename: 'General Information', similarity: 0.8 }];
+    }
 
     res.json({
-        response: fallbackResponse,
-        sources: [{ filename: 'Static Knowledge Base', similarity: 1.0 }],
+        response: response,
+        sources: sources,
         metadata: {
             query: message,
             timestamp: new Date().toISOString(),
@@ -95,7 +173,7 @@ Please note: This is a basic response. For more detailed and accurate informatio
 export const initializeRAG = async (req, res) => {
     try {
         if (ragInitialized) {
-            return res.json({ 
+            return res.json({
                 status: 'already_initialized',
                 message: 'RAG service is already initialized'
             });
@@ -103,10 +181,10 @@ export const initializeRAG = async (req, res) => {
 
         console.log('Initializing RAG service...');
         const success = await ragService.initialize();
-        
+
         if (success) {
             ragInitialized = true;
-            res.json({ 
+            res.json({
                 status: 'success',
                 message: 'RAG service initialized successfully'
             });
@@ -224,7 +302,7 @@ export const clearConversation = (req, res) => {
  * @param {Object} res - Express response object
  */
 export const healthCheck = (req, res) => {
-    res.json({ 
+    res.json({
         status: 'ok',
         ragEnabled: ragInitialized,
         timestamp: new Date().toISOString()

@@ -3,14 +3,63 @@ import { OpenAI } from 'openai';
 import vectorDatabase from './vectorDatabase.js';
 import documentProcessor from './documentProcessor.js';
 import { generateEmbedding } from '../utils/embeddingUtils.js';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 class RAGService {
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        // Initialize DeepSeek API client if API key is available
+        if (process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY.includes('disabled')) {
+            try {
+                this.openai = new OpenAI({
+                    apiKey: process.env.DEEPSEEK_API_KEY,
+                    baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+                });
+                console.log('DeepSeek API client initialized successfully');
+            } catch (error) {
+                console.log('Error initializing DeepSeek client:', error.message);
+                this.openai = null;
+            }
+        } else {
+            console.log('DeepSeek API key not configured, using fallback mode only');
+            this.openai = null;
+        }
+
         this.isInitialized = false;
         this.conversationMemory = new Map(); // Simple in-memory conversation storage
+        this.infoTxtContent = null; // Cache for info.txt content
+    }
+
+    /**
+     * Load and cache the info.txt content
+     */
+    loadInfoTxtContent() {
+        if (this.infoTxtContent) {
+            return this.infoTxtContent;
+        }
+
+        try {
+            // Try to load from server/data/documents/info.txt first
+            const infoPath = join(__dirname, '../data/documents/info.txt');
+            this.infoTxtContent = readFileSync(infoPath, 'utf8');
+            console.log('Loaded info.txt from server/data/documents/');
+        } catch (error) {
+            try {
+                // Fallback to root directory info.txt
+                const rootInfoPath = join(__dirname, '../../info.txt');
+                this.infoTxtContent = readFileSync(rootInfoPath, 'utf8');
+                console.log('Loaded info.txt from root directory');
+            } catch (fallbackError) {
+                console.error('Could not load info.txt from any location:', fallbackError);
+                this.infoTxtContent = 'Masters Union knowledge base not available.';
+            }
+        }
+
+        return this.infoTxtContent;
     }
 
     /**
@@ -19,7 +68,7 @@ class RAGService {
     async initialize() {
         try {
             console.log('Initializing RAG service...');
-            
+
             // Initialize vector database
             const vectorDbReady = await vectorDatabase.initialize();
             if (!vectorDbReady) {
@@ -48,10 +97,10 @@ class RAGService {
     async indexDocuments() {
         try {
             console.log('Indexing documents...');
-            
+
             // Process all documents
             const documents = await documentProcessor.processAllDocuments();
-            
+
             if (documents.length === 0) {
                 console.warn('No documents found to index');
                 return;
@@ -109,7 +158,7 @@ class RAGService {
             } = options;
 
             // Get conversation history if session ID provided
-            const conversationHistory = sessionId ? 
+            const conversationHistory = sessionId ?
                 this.getConversationHistory(sessionId) : [];
 
             let relevantDocs = [];
@@ -119,18 +168,18 @@ class RAGService {
             if (vectorDatabase.isInitialized) {
                 // Retrieve relevant documents using vector search
                 relevantDocs = await this.retrieveRelevantDocuments(
-                    query, 
-                    maxResults, 
+                    query,
+                    maxResults,
                     similarityThreshold
                 );
                 context = this.buildContext(relevantDocs);
             } else {
-                // Fallback: Use static knowledge base
-                console.log('Using fallback mode - static knowledge base');
-                context = "Using static Masters Union knowledge base. For more detailed information, please contact the administration.";
+                // Fallback: Use info.txt content
+                console.log('Using fallback mode - info.txt knowledge base');
+                context = this.loadInfoTxtContent();
                 relevantDocs = [{
-                    metadata: { filename: 'Static Knowledge Base' },
-                    content: 'Static knowledge base content',
+                    metadata: { filename: 'Masters Union Information Guide' },
+                    content: 'Comprehensive Masters Union knowledge base',
                     distance: 0
                 }];
             }
@@ -154,7 +203,7 @@ class RAGService {
                     filename: doc.metadata.filename,
                     chunkIndex: doc.metadata.chunkIndex || 0,
                     similarity: 1 - (doc.distance || 0), // Convert distance to similarity
-                    content: doc.content ? doc.content.substring(0, 200) + '...' : 'Static knowledge base'
+                    content: doc.content ? doc.content.substring(0, 200) + '...' : 'Masters Union knowledge base'
                 })),
                 metadata: {
                     query,
@@ -176,9 +225,9 @@ class RAGService {
     async retrieveRelevantDocuments(query, maxResults, similarityThreshold) {
         try {
             const results = await vectorDatabase.search(query, maxResults);
-            
+
             // Filter by similarity threshold
-            const relevantDocs = results.filter(doc => 
+            const relevantDocs = results.filter(doc =>
                 (1 - doc.distance) >= similarityThreshold
             );
 
@@ -206,11 +255,17 @@ class RAGService {
     }
 
     /**
-     * Generate response using OpenAI
+     * Generate response using DeepSeek API or fallback to static responses
      */
     async generateResponse(query, context, conversationHistory, options = {}) {
         try {
             const { temperature = 0.7, maxTokens = 1000 } = options;
+
+            // Check if DeepSeek client is available and API key is valid
+            if (!this.openai || !process.env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY.includes('disabled')) {
+                console.log('DeepSeek not available, using fallback responses');
+                return await this.generateFallbackResponse(query, context);
+            }
 
             // Build conversation messages
             const messages = [
@@ -241,7 +296,7 @@ ${context}`
             messages.push({ role: "user", content: query });
 
             const completion = await this.openai.chat.completions.create({
-                model: "gpt-3.5-turbo",
+                model: process.env.AI_MODEL || "deepseek-chat",
                 messages: messages,
                 temperature: temperature,
                 max_tokens: maxTokens
@@ -250,8 +305,95 @@ ${context}`
             return completion.choices[0].message.content;
         } catch (error) {
             console.error('Error generating response:', error);
-            throw error;
+
+            // Check if it's an authentication error
+            if (error.status === 401 || error.code === 'invalid_api_key') {
+                console.log('DeepSeek API authentication failed, using fallback response');
+                return await this.generateFallbackResponse(query, context);
+            }
+
+            // For other errors, also use fallback
+            console.log('DeepSeek API call failed, using fallback response');
+            return await this.generateFallbackResponse(query, context);
         }
+    }
+
+    /**
+     * Generate a fallback response when OpenAI is not available
+     */
+    async generateFallbackResponse(query, context) {
+        const lowercaseQuery = query.toLowerCase();
+
+        // Load the comprehensive info.txt content
+        const infoContent = this.loadInfoTxtContent();
+
+        // Simple keyword-based responses using info.txt content
+        if (lowercaseQuery.includes('hello') || lowercaseQuery.includes('hi') || lowercaseQuery.includes('hey')) {
+            return `Hello! 👋 Welcome to the Masters Union Chatbot!
+
+I can help you with comprehensive information about:
+• **Programs** (MBA, Technology, Finance)
+• **Admissions** process and requirements
+• **Faculty** and industry experts
+• **Campus** facilities and location
+• **Student Life** (councils, clubs, housing)
+• **Career Services** and placements
+• **Fees** and financial aid
+• **Policies** and conduct guidelines
+• **Contact** information
+
+What would you like to know about Masters Union?`;
+        } else {
+            // Return relevant excerpts from info.txt based on query keywords
+            const keywords = this.extractKeywords(lowercaseQuery);
+            const relevantContent = this.findRelevantContent(infoContent, keywords);
+
+            return `**Masters Union Information**
+
+${relevantContent}
+
+*Based on our comprehensive knowledge base. Ask specific questions for more details.*`;
+        }
+    }
+
+    /**
+     * Extract keywords from user query
+     */
+    extractKeywords(query) {
+        const importantKeywords = ['program', 'mba', 'technology', 'finance', 'admission', 'faculty', 'campus', 'hostel', 'student', 'career', 'placement', 'fee', 'scholarship', 'contact', 'council', 'club'];
+        return importantKeywords.filter(keyword => query.includes(keyword));
+    }
+
+    /**
+     * Find relevant content from info.txt based on keywords
+     */
+    findRelevantContent(content, keywords) {
+        if (keywords.length === 0) {
+            // Return general overview
+            const lines = content.split('\n').slice(0, 10);
+            return lines.join('\n').substring(0, 500) + '...';
+        }
+
+        // Find sections that contain the keywords
+        const lines = content.split('\n');
+        const relevantLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].toLowerCase();
+            if (keywords.some(keyword => line.includes(keyword))) {
+                // Add context: previous line, current line, and next few lines
+                const start = Math.max(0, i - 1);
+                const end = Math.min(lines.length, i + 5);
+                relevantLines.push(...lines.slice(start, end));
+                break; // Get first relevant section
+            }
+        }
+
+        if (relevantLines.length > 0) {
+            return relevantLines.join('\n').substring(0, 800) + (relevantLines.join('\n').length > 800 ? '...' : '');
+        }
+
+        return 'Masters Union is a pioneering educational institution focused on learning by doing with industry experts as faculty. Please ask specific questions about programs, admissions, faculty, campus life, or any other aspect.';
     }
 
     /**

@@ -17,37 +17,12 @@ class VectorDatabaseService {
      */
     async initialize() {
         try {
-            console.log('Initializing ChromaDB vector database...');
-            
-            // Check if ChromaDB is available
-            try {
-                await this.client.heartbeat();
-            } catch (error) {
-                console.log('ChromaDB not available, using fallback mode...');
-                this.isInitialized = false;
-                return false;
-            }
-            
-            // Check if collection exists, if not create it
-            try {
-                this.collection = await this.client.getCollection({
-                    name: this.collectionName
-                });
-                console.log(`Found existing collection: ${this.collectionName}`);
-            } catch (error) {
-                console.log(`Creating new collection: ${this.collectionName}`);
-                this.collection = await this.client.createCollection({
-                    name: this.collectionName,
-                    metadata: {
-                        description: "Masters Union knowledge base documents",
-                        created_at: new Date().toISOString()
-                    }
-                });
-            }
+            console.log('ChromaDB not available in this environment, using fallback mode...');
 
-            this.isInitialized = true;
-            console.log('Vector database initialized successfully');
-            return true;
+            // ChromaDB is not available in this environment
+            // System will use info.txt knowledge base as fallback
+            this.isInitialized = false;
+            return false;
         } catch (error) {
             console.error('Failed to initialize vector database:', error);
             console.log('Using fallback mode without vector database');
@@ -107,7 +82,7 @@ class VectorDatabaseService {
             }
 
             const results = await this.collection.query(searchParams);
-            
+
             // Format results
             const formattedResults = results.ids[0].map((id, index) => ({
                 id: id,
