@@ -1,45 +1,127 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 const ChatInput = ({ onSendMessage, isTyping }) => {
     const [message, setMessage] = useState('')
+    const [placeholder, setPlaceholder] = useState('')
+    const inputRef = useRef(null)
+
+    const placeholderTexts = [
+        "Ask me anything about Masters Union...",
+        "Discover programs, faculty, and more...",
+        "Your AI assistant is ready to help...",
+        "Explore admissions, campus life..."
+    ]
+
+    // Animated typing placeholder
+    useEffect(() => {
+        let currentIndex = 0
+        let currentText = ''
+        let isDeleting = false
+
+        const typeText = () => {
+            const fullText = placeholderTexts[currentIndex]
+
+            if (isDeleting) {
+                currentText = fullText.substring(0, currentText.length - 1)
+            } else {
+                currentText = fullText.substring(0, currentText.length + 1)
+            }
+
+            setPlaceholder(currentText)
+
+            let typeSpeed = isDeleting ? 50 : 100
+
+            if (!isDeleting && currentText === fullText) {
+                typeSpeed = 2000
+                isDeleting = true
+            } else if (isDeleting && currentText === '') {
+                isDeleting = false
+                currentIndex = (currentIndex + 1) % placeholderTexts.length
+                typeSpeed = 500
+            }
+
+            setTimeout(typeText, typeSpeed)
+        }
+
+        typeText()
+    }, [])
 
     const handleSubmit = (e) => {
         e.preventDefault()
         if (message.trim() && !isTyping) {
             onSendMessage(message)
             setMessage('')
+            inputRef.current?.focus()
+        }
+    }
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSubmit(e)
         }
     }
 
     return (
-        <form
-            onSubmit={handleSubmit}
-            className="flex items-center bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2"
-        >
-            <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Ask anything about Masters Union..."
-                className="flex-1 p-2 bg-transparent outline-none text-gray-700 dark:text-gray-200"
-                disabled={isTyping}
-            />
+        <form onSubmit={handleSubmit} className="flex items-center space-x-4">
+            {/* Glass input container */}
+            <div className="flex-1 relative">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder={placeholder}
+                    className="glass-input w-full px-6 py-4 text-white placeholder-white/60
+                             focus:ring-2 focus:ring-cyan-400/50 transition-all duration-300"
+                    disabled={isTyping}
+                    style={{ fontSize: '16px' }} // Prevent zoom on mobile
+                />
+
+                {/* Animated border glow */}
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-400 to-purple-500 
+                              opacity-0 hover:opacity-20 transition-opacity duration-300 pointer-events-none"></div>
+            </div>
+
+            {/* Neon send button */}
             <button
                 type="submit"
                 disabled={!message.trim() || isTyping}
-                className={`ml-2 px-4 py-2 rounded-md ${!message.trim() || isTyping
-                    ? 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'
-                    : 'bg-primary-600 hover:bg-primary-700'} text-white transition-colors`}
+                className={`relative group min-w-[60px] h-[60px] rounded-full transition-all duration-300 ${!message.trim() || isTyping
+                        ? 'opacity-50 cursor-not-allowed glass-container'
+                        : 'neon-button hover:scale-110 active:scale-95'
+                    }`}
             >
                 {isTyping ? (
-                    <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing
-                    </span>
-                ) : 'Send'}
+                    <div className="flex items-center justify-center">
+                        <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-white rounded-full typing-dot"></div>
+                            <div className="w-2 h-2 bg-white rounded-full typing-dot"></div>
+                            <div className="w-2 h-2 bg-white rounded-full typing-dot"></div>
+                        </div>
+                    </div>
+                ) : (
+                    <svg
+                        className="w-6 h-6 text-white mx-auto transition-transform group-hover:scale-110"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                        />
+                    </svg>
+                )}
+
+                {/* Button glow effect */}
+                {message.trim() && !isTyping && (
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-400 to-purple-500 
+                                  opacity-30 animate-pulse pointer-events-none"></div>
+                )}
             </button>
         </form>
     )

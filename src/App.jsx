@@ -10,7 +10,9 @@ function App() {
     const [sessionId, setSessionId] = useState(null)
     const [ragStatus, setRagStatus] = useState('unknown')
     const [ragStats, setRagStats] = useState(null)
+    const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
     const messagesEndRef = useRef(null)
+    const chatContainerRef = useRef(null)
 
     // Initialize RAG service and check status on component mount
     useEffect(() => {
@@ -18,10 +20,12 @@ function App() {
         checkRAGStatus()
     }, [])
 
-    // Scroll to bottom whenever messages change
+    // Scroll to bottom only when appropriate
     useEffect(() => {
-        scrollToBottom()
-    }, [messages])
+        if (shouldAutoScroll) {
+            scrollToBottom()
+        }
+    }, [messages, shouldAutoScroll])
 
     // Initialize RAG service
     const initializeRAGService = async () => {
@@ -57,7 +61,21 @@ function App() {
     }
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+        }
+    }
+
+    // Check if user is near bottom of chat
+    const isNearBottom = () => {
+        if (!chatContainerRef.current) return true
+        const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current
+        return scrollHeight - scrollTop - clientHeight < 100
+    }
+
+    // Handle scroll to detect if user is manually scrolling
+    const handleScroll = () => {
+        setShouldAutoScroll(isNearBottom())
     }
 
     const handleSendMessage = async (message) => {
@@ -72,6 +90,7 @@ function App() {
         }
 
         setMessages(prev => [...prev, userMessage])
+        setShouldAutoScroll(true) // Ensure auto-scroll when user sends message
         setIsTyping(true)
 
         try {
@@ -79,7 +98,7 @@ function App() {
             console.log('Sending message to RAG service:', message);
             const result = await processUserMessage(message, sessionId)
             console.log('Received RAG response:', result);
-            
+
             // Update session ID if provided
             if (result.sessionId && result.sessionId !== sessionId) {
                 setSessionId(result.sessionId)
@@ -98,6 +117,7 @@ function App() {
 
             console.log('Adding bot message:', botMessage);
             setMessages(prev => [...prev, botMessage])
+            setShouldAutoScroll(true) // Ensure auto-scroll when bot responds
         } catch (error) {
             console.error('Error processing message:', error)
 
@@ -130,21 +150,41 @@ function App() {
     }
 
     return (
-        <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
-            <ChatHeader 
-                ragStatus={ragStatus} 
+        <div className="futuristic-bg min-h-screen flex flex-col">
+            {/* Animated background particles */}
+            <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute top-20 left-10 w-2 h-2 bg-cyan-400 rounded-full opacity-60 animate-ping"></div>
+                <div className="absolute top-40 right-20 w-1 h-1 bg-purple-400 rounded-full opacity-80 animate-pulse"></div>
+                <div className="absolute bottom-32 left-20 w-3 h-3 bg-blue-400 rounded-full opacity-40 animate-bounce"></div>
+                <div className="absolute bottom-40 right-10 w-1.5 h-1.5 bg-cyan-300 rounded-full opacity-70 animate-ping"></div>
+            </div>
+
+            <ChatHeader
+                ragStatus={ragStatus}
                 ragStats={ragStats}
                 onClearConversation={handleClearConversation}
             />
-            <div className="flex-1 overflow-hidden flex flex-col max-w-4xl w-full mx-auto p-4">
-                <div className="flex-1 overflow-y-auto chat-container mb-4 rounded-lg bg-white dark:bg-gray-800 shadow-lg">
-                    <ChatMessages
-                        messages={messages}
-                        isTyping={isTyping}
-                        messagesEndRef={messagesEndRef}
-                    />
+
+            <div className="flex-1 flex items-center justify-center p-4 md:p-8 relative z-10">
+                <div className="w-full max-w-4xl h-full max-h-[80vh] flex flex-col">
+                    {/* Main chat container with glassmorphism */}
+                    <div className="glass-chat flex-1 flex flex-col overflow-hidden">
+                        <div className="flex-1 overflow-y-auto chat-container"
+                            ref={chatContainerRef}
+                            onScroll={handleScroll}>
+                            <ChatMessages
+                                messages={messages}
+                                isTyping={isTyping}
+                                messagesEndRef={messagesEndRef}
+                            />
+                        </div>
+
+                        {/* Input section */}
+                        <div className="p-6 border-t border-white/10">
+                            <ChatInput onSendMessage={handleSendMessage} isTyping={isTyping} />
+                        </div>
+                    </div>
                 </div>
-                <ChatInput onSendMessage={handleSendMessage} isTyping={isTyping} />
             </div>
         </div>
     )

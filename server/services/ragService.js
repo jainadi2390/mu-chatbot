@@ -1,5 +1,5 @@
 // Advanced RAG (Retrieval-Augmented Generation) Service
-import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import vectorDatabase from './vectorDatabase.js';
 import documentProcessor from './documentProcessor.js';
 import { generateEmbedding } from '../utils/embeddingUtils.js';
@@ -12,20 +12,21 @@ const __dirname = dirname(__filename);
 
 class RAGService {
     constructor() {
-        // Initialize OpenAI API client if API key is available
-        if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('disabled')) {
+        // Initialize Gemini API client if API key is available
+        if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('disabled')) {
             try {
-                this.openai = new OpenAI({
-                    apiKey: process.env.OPENAI_API_KEY,
-                });
-                console.log('OpenAI API client initialized successfully');
+                this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+                this.model = this.genAI.getGenerativeModel({ model: process.env.AI_MODEL || 'gemini-1.5-flash' });
+                console.log('Gemini API client initialized successfully');
             } catch (error) {
-                console.log('Error initializing OpenAI client:', error.message);
-                this.openai = null;
+                console.log('Error initializing Gemini client:', error.message);
+                this.genAI = null;
+                this.model = null;
             }
         } else {
-            console.log('OpenAI API key not configured, using fallback mode only');
-            this.openai = null;
+            console.log('Gemini API key not configured, using fallback mode only');
+            this.genAI = null;
+            this.model = null;
         }
 
         this.isInitialized = false;
@@ -254,23 +255,26 @@ class RAGService {
     }
 
     /**
-     * Generate response using OpenAI API or fallback to static responses
+     * Generate response using Gemini API or fallback to static responses
      */
     async generateResponse(query, context, conversationHistory, options = {}) {
         try {
             const { temperature = 0.7, maxTokens = 1000 } = options;
 
-            // Check if OpenAI client is available and API key is valid
-            if (!this.openai || !process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes('disabled')) {
-                console.log('OpenAI not available, using fallback responses');
+            // Check if Gemini client is available and API key is valid
+            if (!this.model || !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('disabled')) {
+                console.log('Gemini API not available, using fallback responses');
                 return await this.generateFallbackResponse(query, context);
             }
 
-            // Build conversation messages
-            const messages = [
-                {
-                    role: "system",
-                    content: `You are a helpful AI assistant for Masters Union. You have access to the Masters Union knowledge base to answer questions about the institution, programs, policies, and student life.
+            // Build conversation history for Gemini
+            let conversationText = '';
+            conversationHistory.forEach(entry => {
+                conversationText += `User: ${entry.query}\nAssistant: ${entry.response}\n\n`;
+            });
+
+            // Build the complete prompt for Gemini
+            const prompt = `You are a helpful AI assistant for Masters Union. You have access to the Masters Union knowledge base to answer questions about the institution, programs, policies, and student life.
 
 Instructions:
 - Answer questions based ONLY on the provided context from the knowledge base
@@ -281,44 +285,42 @@ Instructions:
 - If asked about something not related to Masters Union, politely redirect to Masters Union topics
 
 Context from knowledge base:
-${context}`
-                }
-            ];
+${context}
 
-            // Add conversation history
-            conversationHistory.forEach(entry => {
-                messages.push({ role: "user", content: entry.query });
-                messages.push({ role: "assistant", content: entry.response });
+${conversationText ? `Previous conversation:\n${conversationText}` : ''}
+
+User: ${query}
+Assistant:`;
+
+            const result = await this.model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: temperature,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: maxTokens,
+                },
             });
 
-            // Add current query
-            messages.push({ role: "user", content: query });
-
-            const completion = await this.openai.chat.completions.create({
-                model: process.env.AI_MODEL || "gpt-3.5-turbo",
-                messages: messages,
-                temperature: temperature,
-                max_tokens: maxTokens
-            });
-
-            return completion.choices[0].message.content;
+            const response = result.response;
+            return response.text();
         } catch (error) {
             console.error('Error generating response:', error);
 
             // Check if it's an authentication error
-            if (error.status === 401 || error.code === 'invalid_api_key') {
-                console.log('OpenAI API authentication failed, using fallback response');
+            if (error.status === 401 || error.code === 'INVALID_API_KEY' || error.message.includes('API key')) {
+                console.log('Gemini API authentication failed, using fallback response');
                 return await this.generateFallbackResponse(query, context);
             }
 
             // For other errors, also use fallback
-            console.log('OpenAI API call failed, using fallback response');
+            console.log('Gemini API call failed, using fallback response');
             return await this.generateFallbackResponse(query, context);
         }
     }
 
     /**
-     * Generate a fallback response when OpenAI is not available
+     * Generate a fallback response when Gemini API is not available
      */
     async generateFallbackResponse(query, context) {
         const lowercaseQuery = query.toLowerCase();
@@ -434,6 +436,9 @@ ${relevantContent}
             const vectorDbStats = await vectorDatabase.getStats();
             return {
                 isInitialized: this.isInitialized,
+                ragEnabled: this.model ? true : false,
+                aiProvider: 'Gemini',
+                model: process.env.AI_MODEL || 'gemini-1.5-flash',
                 vectorDatabase: vectorDbStats,
                 activeSessions: this.conversationMemory.size,
                 totalConversations: Array.from(this.conversationMemory.values())
